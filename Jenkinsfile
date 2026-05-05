@@ -36,7 +36,18 @@ pipeline {
             echo "Using Terraform tool installation: ${env.TERRAFORM_CMD}"
           } catch (err) {
             echo "Terraform tool not configured in Jenkins; falling back to PATH-based terraform"
-            env.TERRAFORM_CMD = isUnix() ? 'terraform' : 'terraform.exe'
+            env.TERRAFORM_CMD = 'terraform'
+            if (isUnix()) {
+              def code = sh(returnStatus: true, script: 'command -v terraform >/dev/null 2>&1')
+              if (code != 0) {
+                error("Terraform not found on PATH. Install Terraform or configure Jenkins tool named 'terraform'.")
+              }
+            } else {
+              def code = bat(returnStatus: true, script: 'where terraform')
+              if (code != 0) {
+                error("Terraform not found on PATH. Install Terraform or configure Jenkins tool named 'terraform'.")
+              }
+            }
           }
         }
       }
