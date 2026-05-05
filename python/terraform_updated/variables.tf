@@ -7,5 +7,5 @@ variable "instance_type" {
 }
 
 variable "bucket_name" {
-  default = "jenkins-demo-bucket-12345"
+  default = "jenkins-demo-bucket-123456"
 }
