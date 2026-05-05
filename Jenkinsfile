@@ -1,6 +1,11 @@
 pipeline {
   agent any
 
+  environment {
+    TF = "${WORKSPACE}\\terraform.exe"
+    TF_DIR = "terraform-project/terraform"
+  }
+
   parameters {
     booleanParam(name: 'DRY_RUN', defaultValue: true)
     booleanParam(name: 'CREATE_EC2_INSTANCE', defaultValue: true)
@@ -19,72 +24,65 @@ pipeline {
     }
 
     stage('Setup Terraform') {
-        steps {
-            powershell '''
-                Invoke-WebRequest -Uri https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_windows_amd64.zip -OutFile terraform.zip
-                Expand-Archive -Path terraform.zip -DestinationPath . -Force
-            '''
-        }
+      steps {
+        powershell '''
+          Invoke-WebRequest -Uri https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_windows_amd64.zip -OutFile terraform.zip
+          Expand-Archive -Path terraform.zip -DestinationPath . -Force
+        '''
+      }
     }
 
     stage('Terraform Init') {
       steps {
-        script {
-          def tf = "${env.WORKSPACE}\\terraform.exe"
-          bat "\"${tf}\" init"
-        }
+        bat "\"${env.TF}\" -chdir=${env.TF_DIR} init"
       }
     }
 
-    stage('Plan Creation (Dry Run)') {
+    stage('Plan (Dry Run)') {
       when {
         expression { params.DRY_RUN == true }
       }
       steps {
         script {
-          def tf = "${env.WORKSPACE}\\terraform.exe"
-
           def targets = []
+
           if (params.CREATE_EC2_INSTANCE) targets.add('-target=module.ec2_instance')
           if (params.CREATE_ELASTIC_IP) targets.add('-target=module.elastic_ip')
           if (params.CREATE_EBS_VOLUME) targets.add('-target=module.ebs_volume')
           if (params.CREATE_SNAPSHOT) targets.add('-target=module.snapshot')
 
           def targetArgs = targets.join(' ')
-          bat "\"${tf}\" plan ${targetArgs}"
+
+          bat "\"${env.TF}\" -chdir=${env.TF_DIR} plan ${targetArgs}"
         }
       }
     }
 
-    stage('Create Resources') {
+    stage('Apply') {
       when {
         expression { params.DRY_RUN == false }
       }
       steps {
         script {
-          def tf = "${env.WORKSPACE}\\terraform.exe"
-
           def targets = []
+
           if (params.CREATE_EC2_INSTANCE) targets.add('-target=module.ec2_instance')
           if (params.CREATE_ELASTIC_IP) targets.add('-target=module.elastic_ip')
           if (params.CREATE_EBS_VOLUME) targets.add('-target=module.ebs_volume')
           if (params.CREATE_SNAPSHOT) targets.add('-target=module.snapshot')
 
           def targetArgs = targets.join(' ')
-          def tf = "${env.WORKSPACE}\\terraform.exe"
-          bat "\"${tf}\" -chdir=terraform-project plan ${targetArgs}"
-          bat "\"${tf}\" -chdir=terraform-project apply -auto-approve ${targetArgs}"
-          bat "\"${tf}\" -chdir=terraform-project destroy -auto-approve ${targetArgs}"
+
+          bat "\"${env.TF}\" -chdir=${env.TF_DIR} apply -auto-approve ${targetArgs}"
         }
       }
     }
 
-    stage('Delete Resources') {
+    stage('Destroy') {
       steps {
         script {
-          def tf = "${env.WORKSPACE}\\terraform.exe"
-
           def targets = []
+
           if (params.CREATE_EC2_INSTANCE) targets.add('-target=module.ec2_instance')
           if (params.CREATE_ELASTIC_IP) targets.add('-target=module.elastic_ip')
           if (params.CREATE_EBS_VOLUME) targets.add('-target=module.ebs_volume')
@@ -93,12 +91,13 @@ pipeline {
           def targetArgs = targets.join(' ')
 
           if (params.DRY_RUN) {
-            bat "\"${tf}\" plan -destroy ${targetArgs}"
+            bat "\"${env.TF}\" -chdir=${env.TF_DIR} plan -destroy ${targetArgs}"
           } else {
-            bat "\"${tf}\" destroy -auto-approve ${targetArgs}"
+            bat "\"${env.TF}\" -chdir=${env.TF_DIR} destroy -auto-approve ${targetArgs}"
           }
         }
       }
     }
+
   }
 }
