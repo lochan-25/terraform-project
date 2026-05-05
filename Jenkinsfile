@@ -1,155 +1,81 @@
 pipeline {
   agent any
 
-  options {
-    timestamps()
-    skipDefaultCheckout()
-  }
-
   parameters {
-    choice(name: 'DRY_RUN', choices: ['true', 'false'], description: 'Select true for terraform plan/destroy plan only, false to apply/destroy.')
-    booleanParam(name: 'CREATE_EC2_INSTANCE', defaultValue: true, description: 'Create or destroy the EC2 instance module')
-    booleanParam(name: 'CREATE_ELASTIC_IP', defaultValue: true, description: 'Create or destroy the Elastic IP module')
-    booleanParam(name: 'CREATE_EBS_VOLUME', defaultValue: true, description: 'Create or destroy the EBS volume module')
-    booleanParam(name: 'CREATE_SNAPSHOT', defaultValue: true, description: 'Create or destroy the Snapshot module')
-  }
-
-  environment {
-    TF_DIR = 'terraform-project/terraform'
-    SONAR_PROJECT_KEY = 'your-sonar-project-key'
-    SONAR_HOST_URL = 'https://sonarcloud.io'
+    booleanParam(name: 'DRY_RUN', defaultValue: true)
+    booleanParam(name: 'CREATE_EC2_INSTANCE', defaultValue: true)
+    booleanParam(name: 'CREATE_ELASTIC_IP', defaultValue: false)
+    booleanParam(name: 'CREATE_EBS_VOLUME', defaultValue: false)
+    booleanParam(name: 'CREATE_SNAPSHOT', defaultValue: false)
   }
 
   stages {
-    stage('SCM Checkout') {
+
+    stage('Checkout') {
       steps {
-        checkout scm
+        deleteDir()
+        git branch: 'main', url: 'https://github.com/lochan-25/terraform-project.git'
       }
     }
 
-    stage('Setup Terraform Tool') {
+    stage('Setup Terraform') {
       steps {
         script {
-          def tfCmd = 'terraform'
-          if (isUnix()) {
-            def code = sh(returnStatus: true, script: 'command -v terraform >/dev/null 2>&1')
-            if (code != 0) {
-              sh 'curl -fsSL https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip -o terraform.zip && unzip terraform.zip && chmod +x terraform'
-              tfCmd = './terraform'
-            }
-          } else {
-            def code = bat(returnStatus: true, script: 'where terraform')
-            if (code != 0) {
-              bat 'powershell -Command "Invoke-WebRequest -Uri https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_windows_amd64.zip -OutFile terraform.zip; Expand-Archive -Path terraform.zip -DestinationPath . -Force"'
-              tfCmd = 'terraform.exe'
-            }
-          }
-          env.TERRAFORM_CMD = tfCmd
-          echo "Using Terraform: ${env.TERRAFORM_CMD}"
+          bat '''
+          powershell -Command "
+          Invoke-WebRequest -Uri https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_windows_amd64.zip -OutFile terraform.zip;
+          Expand-Archive -Path terraform.zip -DestinationPath . -Force
+          "
+          '''
         }
       }
     }
 
     stage('Terraform Init') {
-        steps {
-            dir("${env.WORKSPACE}\\terraform-project\\terraform") {
-                script {
-                    def tf = "${env.WORKSPACE}\\terraform.exe"
-                    if (isUnix()) {
-                        sh "${tf} init -input=false"
-                    } else {
-                        bat "\"${tf}\" init -input=false"
-                    }
-                }
-            }
-        }
-    }
-
-    stage('DEBUG TF PATH') {
-        steps {
-            bat 'dir /s *.tf'
-        }
-    }
-
-    stage('Scans') {
-        steps {
-            dir(env.TF_DIR) {
-                script {
-
-                    echo 'Skipping Trivy scan (tool not available in Jenkins environment)'
-                    if (env.SONAR_TOKEN) {
-                        def sonarCmd = "sonar-scanner -Dsonar.projectKey=${env.SONAR_PROJECT_KEY} -Dsonar.host.url=${env.SONAR_HOST_URL} -Dsonar.login=${env.SONAR_TOKEN} -Dsonar.sources=."
-
-                        if (isUnix()) {
-                            sh sonarCmd
-                        } else {
-                            bat sonarCmd
-                        }
-                    } else {
-                        echo 'Skipping Sonar scan because SONAR_TOKEN is not defined.'
-                    }
-                }
-            }
-        }
-    }
-    stage('Create Resources') {
-      when {
-        expression { params.DRY_RUN == 'false' }
-      }
       steps {
         script {
-          def targets = []
-          if (params.CREATE_EC2_INSTANCE) { targets.add('-target=module.ec2_instance') }
-          if (params.CREATE_ELASTIC_IP) { targets.add('-target=module.elastic_ip') }
-          if (params.CREATE_EBS_VOLUME) { targets.add('-target=module.ebs_volume') }
-          if (params.CREATE_SNAPSHOT) { targets.add('-target=module.snapshot') }
-
-          if (targets.isEmpty()) {
-            error 'No resources selected for creation. Please enable at least one checkbox.'
-          }
-
-          dir("${env.WORKSPACE}\\terraform-project\\terraform") {
-            def targetArgs = targets.join(' ')
-            def tf = "${env.WORKSPACE}\\terraform.exe"
-            def cmd = "\"${tf}\" apply -auto-approve ${targetArgs}"
-            echo "Applying selected resources: ${targetArgs}"
-            if (isUnix()) {
-              sh cmd
-            } else {
-              bat cmd
-            }
-          }
+          def tf = "${env.WORKSPACE}\\terraform.exe"
+          bat "\"${tf}\" init"
         }
       }
     }
 
     stage('Plan Creation (Dry Run)') {
       when {
-        expression { params.DRY_RUN == 'true' }
+        expression { params.DRY_RUN == true }
       }
       steps {
         script {
+          def tf = "${env.WORKSPACE}\\terraform.exe"
+
           def targets = []
-          if (params.CREATE_EC2_INSTANCE) { targets.add('-target=module.ec2_instance') }
-          if (params.CREATE_ELASTIC_IP) { targets.add('-target=module.elastic_ip') }
-          if (params.CREATE_EBS_VOLUME) { targets.add('-target=module.ebs_volume') }
-          if (params.CREATE_SNAPSHOT) { targets.add('-target=module.snapshot') }
+          if (params.CREATE_EC2_INSTANCE) targets.add('-target=module.ec2_instance')
+          if (params.CREATE_ELASTIC_IP) targets.add('-target=module.elastic_ip')
+          if (params.CREATE_EBS_VOLUME) targets.add('-target=module.ebs_volume')
+          if (params.CREATE_SNAPSHOT) targets.add('-target=module.snapshot')
 
-          if (targets.isEmpty()) {
-            error 'No resources selected for dry-run creation. Please enable at least one checkbox.'
-          }
+          def targetArgs = targets.join(' ')
+          bat "\"${tf}\" plan ${targetArgs}"
+        }
+      }
+    }
 
-          dir("${env.WORKSPACE}\\terraform-project\\terraform") {
-            def targetArgs = targets.join(' ')
-            def tf = "${env.WORKSPACE}\\terraform.exe"
-            def cmd = "\"${tf}\" plan ${targetArgs}"
-            echo "Planning selected resource creation: ${targetArgs}"
-            if (isUnix()) {
-              sh cmd
-            } else {
-              bat cmd
-            }
-          }
+    stage('Create Resources') {
+      when {
+        expression { params.DRY_RUN == false }
+      }
+      steps {
+        script {
+          def tf = "${env.WORKSPACE}\\terraform.exe"
+
+          def targets = []
+          if (params.CREATE_EC2_INSTANCE) targets.add('-target=module.ec2_instance')
+          if (params.CREATE_ELASTIC_IP) targets.add('-target=module.elastic_ip')
+          if (params.CREATE_EBS_VOLUME) targets.add('-target=module.ebs_volume')
+          if (params.CREATE_SNAPSHOT) targets.add('-target=module.snapshot')
+
+          def targetArgs = targets.join(' ')
+          bat "\"${tf}\" apply -auto-approve ${targetArgs}"
         }
       }
     }
@@ -157,35 +83,23 @@ pipeline {
     stage('Delete Resources') {
       steps {
         script {
+          def tf = "${env.WORKSPACE}\\terraform.exe"
+
           def targets = []
-          if (params.CREATE_EC2_INSTANCE) { targets.add('-target=module.ec2_instance') }
-          if (params.CREATE_ELASTIC_IP) { targets.add('-target=module.elastic_ip') }
-          if (params.CREATE_EBS_VOLUME) { targets.add('-target=module.ebs_volume') }
-          if (params.CREATE_SNAPSHOT) { targets.add('-target=module.snapshot') }
+          if (params.CREATE_EC2_INSTANCE) targets.add('-target=module.ec2_instance')
+          if (params.CREATE_ELASTIC_IP) targets.add('-target=module.elastic_ip')
+          if (params.CREATE_EBS_VOLUME) targets.add('-target=module.ebs_volume')
+          if (params.CREATE_SNAPSHOT) targets.add('-target=module.snapshot')
 
-          if (targets.isEmpty()) {
-            error 'No resources selected for deletion. Please enable at least one checkbox.'
-          }
+          def targetArgs = targets.join(' ')
 
-          dir("${env.WORKSPACE}\\terraform-project\\terraform") {
-            def targetArgs = targets.join(' ')
-            def tf = "${env.WORKSPACE}\\terraform.exe"
-            def cmd = params.DRY_RUN == 'true' ? "\"${tf}\" plan -destroy ${targetArgs}" : "\"${tf}\" destroy -auto-approve ${targetArgs}"
-            echo "Executing resource deletion stage with dry-run=${params.DRY_RUN}: ${targetArgs}"
-            if (isUnix()) {
-              sh cmd
-            } else {
-              bat cmd
-            }
+          if (params.DRY_RUN) {
+            bat "\"${tf}\" plan -destroy ${targetArgs}"
+          } else {
+            bat "\"${tf}\" destroy -auto-approve ${targetArgs}"
           }
         }
       }
-    }
-  }
-
-  post {
-    always {
-      archiveArtifacts artifacts: 'terraform-project/terraform/trivy-iac-report.json, trivy-fs-report.json', allowEmptyArchive: true
     }
   }
 }
