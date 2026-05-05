@@ -11,7 +11,6 @@ pipeline {
 
   environment {
     TF = "${WORKSPACE}\\terraform.exe"
-    TF_DIR = "${WORKSPACE}\\terraform"
     AWS_DEFAULT_REGION = "us-east-1"
   }
 
@@ -24,11 +23,25 @@ pipeline {
       }
     }
 
-    stage('Verify Repo') {
+    stage('Find Terraform Files') {
       steps {
-        bat 'dir'
-        bat 'dir terraform'
-        bat 'dir terraform\\*.tf'
+        script {
+          echo "Searching for .tf files..."
+
+          def output = bat(script: 'dir /s /b *.tf', returnStdout: true).trim()
+
+          if (!output) {
+            error "❌ No Terraform files found in repo"
+          }
+
+          echo "Found TF files:\n${output}"
+
+          def firstFile = output.split("\n")[0]
+          def tfDir = firstFile.substring(0, firstFile.lastIndexOf("\\"))
+
+          echo "Terraform directory detected: ${tfDir}"
+          env.TF_DIR = tfDir
+        }
       }
     }
 
@@ -58,13 +71,13 @@ pipeline {
 
     stage('Terraform Init') {
       steps {
-        bat "\"${env.TF}\" -chdir=${env.TF_DIR} init"
+        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" init"
       }
     }
 
     stage('Terraform Plan') {
       steps {
-        bat "\"${env.TF}\" -chdir=${env.TF_DIR} plan"
+        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan"
       }
     }
 
@@ -73,21 +86,21 @@ pipeline {
         expression { params.DRY_RUN == false }
       }
       steps {
-        bat "\"${env.TF}\" -chdir=${env.TF_DIR} apply -auto-approve"
+        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" apply -auto-approve"
       }
     }
 
-    // 🔥 FIX: create cleanup.py automatically
+    // FIX: always create cleanup script
     stage('Create cleanup.py') {
       steps {
         writeFile file: 'cleanup.py', text: '''
 import sys
 
-print("Cleanup script running")
+print("Cleanup script started")
 resources = sys.argv[1:]
 
 if not resources:
-    print("No resources passed")
+    print("No resources provided")
     exit(1)
 
 for r in resources:
@@ -98,7 +111,7 @@ print("Cleanup completed")
       }
     }
 
-    stage('Cleanup Resources (Python)') {
+    stage('Cleanup Resources') {
       when {
         expression { params.DRY_RUN == false }
       }
@@ -123,7 +136,7 @@ print("Cleanup completed")
         expression { params.DRY_RUN == true }
       }
       steps {
-        echo "DRY RUN — No resources created or deleted"
+        echo "DRY RUN — No changes applied"
       }
     }
 
