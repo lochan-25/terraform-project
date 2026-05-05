@@ -1,6 +1,10 @@
 pipeline {
   agent any
 
+  parameters {
+    booleanParam(name: 'DELETE_RESOURCES', defaultValue: false, description: 'Delete AWS resources using Python script')
+  }
+
   environment {
     TF = "${WORKSPACE}\\terraform.exe"
     TF_DIR = "${WORKSPACE}\\python\\terraform_updated"
@@ -45,17 +49,56 @@ pipeline {
       }
     }
 
-    stage('Terraform Plan') {
-      steps {
-        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan"
-      }
-    }
-
     stage('Terraform Apply') {
       steps {
         bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" apply -auto-approve"
       }
     }
 
+    // =========================
+    // 🔍 SONAR ANALYSIS STAGE
+    // =========================
+    stage('SonarQube Analysis') {
+      when {
+        expression { return env.SONAR_TOKEN != null }
+      }
+      steps {
+        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+          bat """
+          sonar-scanner ^
+          -Dsonar.projectKey=terraform-project ^
+          -Dsonar.sources=. ^
+          -Dsonar.host.url=http://localhost:9000 ^
+          -Dsonar.login=%SONAR_TOKEN%
+          """
+        }
+      }
+    }
+
+    // =========================
+    // 🧹 PYTHON CLEANUP STAGE
+    // =========================
+    stage('Delete Resources (Python)') {
+      when {
+        expression { params.DELETE_RESOURCES == true }
+      }
+      steps {
+        script {
+          echo "Running cleanup script..."
+
+          // adjust path if your script is inside python folder
+          bat "python python\\cleanup.py ec2"
+          bat "python python\\cleanup.py ebs"
+          bat "python python\\cleanup.py s3"
+        }
+      }
+    }
+
+  }
+
+  post {
+    always {
+      echo "Pipeline execution completed"
+    }
   }
 }
