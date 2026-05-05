@@ -19,16 +19,12 @@ pipeline {
     }
 
     stage('Setup Terraform') {
-      steps {
-        script {
-          bat '''
-          powershell -Command "
-          Invoke-WebRequest -Uri https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_windows_amd64.zip -OutFile terraform.zip;
-          Expand-Archive -Path terraform.zip -DestinationPath . -Force
-          "
-          '''
+        steps {
+            powershell '''
+                Invoke-WebRequest -Uri https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_windows_amd64.zip -OutFile terraform.zip
+                Expand-Archive -Path terraform.zip -DestinationPath . -Force
+            '''
         }
-      }
     }
 
     stage('Terraform Init') {
