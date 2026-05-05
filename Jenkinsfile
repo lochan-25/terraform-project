@@ -11,7 +11,7 @@ pipeline {
 
   environment {
     TF = "${WORKSPACE}\\terraform.exe"
-    TF_DIR = "${WORKSPACE}\\terraform-project\\terraform"
+    TF_DIR = "${WORKSPACE}\\terraform"
     AWS_DEFAULT_REGION = "us-east-1"
   }
 
@@ -24,10 +24,11 @@ pipeline {
       }
     }
 
-    stage('Verify Files') {
+    stage('Verify Repo') {
       steps {
         bat 'dir'
-        bat 'dir /s *.tf'
+        bat 'dir terraform'
+        bat 'dir terraform\\*.tf'
       }
     }
 
@@ -42,11 +43,10 @@ pipeline {
 
     stage('Configure AWS') {
       steps {
-        withCredentials([usernamePassword(
-          credentialsId: 'aws-creds',
-          usernameVariable: 'AWS_ACCESS_KEY_ID',
-          passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-        )]) {
+        withCredentials([
+          string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
+          string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
+        ]) {
           bat '''
           set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
           set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
@@ -58,13 +58,13 @@ pipeline {
 
     stage('Terraform Init') {
       steps {
-        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" init"
+        bat "\"${env.TF}\" -chdir=${env.TF_DIR} init"
       }
     }
 
     stage('Terraform Plan') {
       steps {
-        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan"
+        bat "\"${env.TF}\" -chdir=${env.TF_DIR} plan"
       }
     }
 
@@ -73,16 +73,27 @@ pipeline {
         expression { params.DRY_RUN == false }
       }
       steps {
-        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" apply -auto-approve"
+        bat "\"${env.TF}\" -chdir=${env.TF_DIR} apply -auto-approve"
       }
     }
 
-    stage('Create cleanup.py (fix your error)') {
+    // 🔥 FIX: create cleanup.py automatically
+    stage('Create cleanup.py') {
       steps {
         writeFile file: 'cleanup.py', text: '''
 import sys
-print("Cleanup started")
-print("Resources:", sys.argv[1:])
+
+print("Cleanup script running")
+resources = sys.argv[1:]
+
+if not resources:
+    print("No resources passed")
+    exit(1)
+
+for r in resources:
+    print(f"Deleting resource: {r}")
+
+print("Cleanup completed")
 '''
       }
     }
