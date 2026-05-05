@@ -30,8 +30,14 @@ pipeline {
     stage('Setup Terraform Tool') {
       steps {
         script {
-          env.TERRAFORM_CMD = isUnix() ? "${tool 'terraform'}/terraform" : "${tool 'terraform'}\\terraform.exe"
-          echo "Using Terraform from: ${env.TERRAFORM_CMD}"
+          try {
+            def tfTool = tool 'terraform'
+            env.TERRAFORM_CMD = isUnix() ? "${tfTool}/terraform" : "${tfTool}\\terraform.exe"
+            echo "Using Terraform tool installation: ${env.TERRAFORM_CMD}"
+          } catch (err) {
+            echo "Terraform tool not configured in Jenkins; falling back to PATH-based terraform"
+            env.TERRAFORM_CMD = isUnix() ? 'terraform' : 'terraform.exe'
+          }
         }
       }
     }
