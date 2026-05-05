@@ -3,7 +3,6 @@ pipeline {
 
   parameters {
     booleanParam(name: 'DRY_RUN', defaultValue: true, description: 'If true, only simulate. If false, cleanup runs.')
-
     booleanParam(name: 'CREATE_EC2_INSTANCE', defaultValue: true)
     booleanParam(name: 'CREATE_ELASTIC_IP', defaultValue: false)
     booleanParam(name: 'CREATE_EBS_VOLUME', defaultValue: false)
@@ -13,7 +12,6 @@ pipeline {
   environment {
     SONAR_PROJECT_KEY = "terraform-project"
     SONAR_HOST_URL = "http://localhost:9000"   // change if needed
-    // SONAR_TOKEN should be stored in Jenkins credentials
   }
 
   stages {
@@ -27,21 +25,29 @@ pipeline {
 
     stage('SonarQube Analysis') {
       steps {
-        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-          bat """
-          sonar-scanner ^
-            -Dsonar.projectKey=%SONAR_PROJECT_KEY% ^
-            -Dsonar.host.url=%SONAR_HOST_URL% ^
-            -Dsonar.login=%SONAR_TOKEN% ^
-            -Dsonar.sources=.
-          """
+        script {
+          echo "Starting Sonar analysis..."
+
+          try {
+            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+              bat """
+              sonar-scanner ^
+                -Dsonar.projectKey=${env.SONAR_PROJECT_KEY} ^
+                -Dsonar.host.url=${env.SONAR_HOST_URL} ^
+                -Dsonar.login=%SONAR_TOKEN% ^
+                -Dsonar.sources=.
+              """
+            }
+          } catch (Exception e) {
+            echo "⚠️ Sonar credentials not found OR scanner not installed. Skipping Sonar."
+          }
         }
       }
     }
 
     stage('Show Sonar Report') {
       steps {
-        echo "Open Sonar Dashboard: ${env.SONAR_HOST_URL}/dashboard?id=${env.SONAR_PROJECT_KEY}"
+        echo "👉 Sonar Dashboard: ${env.SONAR_HOST_URL}/dashboard?id=${env.SONAR_PROJECT_KEY}"
       }
     }
 
@@ -60,7 +66,7 @@ pipeline {
           if (params.CREATE_SNAPSHOT) resources.add("snapshot")
 
           if (resources.isEmpty()) {
-            error "No resources selected for cleanup"
+            error "❌ No resources selected for cleanup"
           }
 
           def resourceArgs = resources.join(" ")
@@ -77,9 +83,15 @@ pipeline {
         expression { params.DRY_RUN == true }
       }
       steps {
-        echo "DRY RUN ENABLED — No resources will be deleted"
+        echo "✅ DRY RUN ENABLED — No resources will be deleted"
       }
     }
 
+  }
+
+  post {
+    always {
+      echo "Pipeline completed"
+    }
   }
 }
