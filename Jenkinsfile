@@ -20,12 +20,11 @@ pipeline {
     SONAR_HOST_URL = 'https://sonarcloud.io'
   }
 
-  stages {
-    stage('SCM Checkout') {
-      steps {
-        checkout scm
-      }
+  stage('SCM Checkout') {
+    steps {
+        git branch: 'main', url: 'https://github.com/lochan-25/terraform-project.git'
     }
+ }
 
     stage('Setup Terraform Tool') {
       steps {
