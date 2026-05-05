@@ -65,6 +65,12 @@ pipeline {
         }
     }
 
+    stage('DEBUG TF PATH') {
+        steps {
+            bat 'dir /s *.tf'
+        }
+    }
+
     stage('Scans') {
         steps {
             dir(env.TF_DIR) {
