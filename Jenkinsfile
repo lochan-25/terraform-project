@@ -34,13 +34,13 @@ pipeline {
           if (isUnix()) {
             def code = sh(returnStatus: true, script: 'command -v terraform >/dev/null 2>&1')
             if (code != 0) {
-              sh 'curl -fsSL https://releases.hashicorp.com/terraform/latest/terraform_latest_linux_amd64.zip -o terraform.zip && unzip terraform.zip && chmod +x terraform'
+              sh 'curl -fsSL https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip -o terraform.zip && unzip terraform.zip && chmod +x terraform'
               tfCmd = './terraform'
             }
           } else {
             def code = bat(returnStatus: true, script: 'where terraform')
             if (code != 0) {
-              bat 'powershell -Command "Invoke-WebRequest -Uri https://releases.hashicorp.com/terraform/latest/terraform_latest_windows_amd64.zip -OutFile terraform.zip; Expand-Archive -Path terraform.zip -DestinationPath . -Force"'
+              bat 'powershell -Command "Invoke-WebRequest -Uri https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_windows_amd64.zip -OutFile terraform.zip; Expand-Archive -Path terraform.zip -DestinationPath . -Force"'
               tfCmd = 'terraform.exe'
             }
           }
