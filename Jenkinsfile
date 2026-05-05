@@ -71,7 +71,10 @@ pipeline {
           if (params.CREATE_SNAPSHOT) targets.add('-target=module.snapshot')
 
           def targetArgs = targets.join(' ')
-          bat "\"${tf}\" apply -auto-approve ${targetArgs}"
+          def tf = "${env.WORKSPACE}\\terraform.exe"
+          bat "\"${tf}\" -chdir=terraform-project plan ${targetArgs}"
+          bat "\"${tf}\" -chdir=terraform-project apply -auto-approve ${targetArgs}"
+          bat "\"${tf}\" -chdir=terraform-project destroy -auto-approve ${targetArgs}"
         }
       }
     }
