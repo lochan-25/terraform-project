@@ -5,14 +5,6 @@ pipeline {
     TF = "${WORKSPACE}\\terraform.exe"
   }
 
-  parameters {
-    booleanParam(name: 'DRY_RUN', defaultValue: true)
-    booleanParam(name: 'CREATE_EC2_INSTANCE', defaultValue: true)
-    booleanParam(name: 'CREATE_ELASTIC_IP', defaultValue: false)
-    booleanParam(name: 'CREATE_EBS_VOLUME', defaultValue: false)
-    booleanParam(name: 'CREATE_SNAPSHOT', defaultValue: false)
-  }
-
   stages {
 
     stage('Checkout') {
@@ -22,21 +14,25 @@ pipeline {
       }
     }
 
-    stage('Find Terraform Directory') {
+    stage('Verify Repo Content') {
       steps {
         script {
-          // Find directory containing .tf files
-          def output = bat(script: 'dir /s /b *.tf', returnStdout: true).trim()
+          echo "Listing workspace files..."
+          bat 'dir'
+          bat 'dir /s'
 
-          if (!output) {
-            error "No .tf files found in workspace"
+          def tfFiles = bat(script: 'dir /s /b *.tf', returnStdout: true).trim()
+
+          if (!tfFiles) {
+            error "❌ No .tf files found. Repo checkout is wrong OR files not in repo root."
           }
 
-          // Extract directory path from first match
-          def firstFile = output.split("\n")[0]
+          echo "✅ Terraform files found:\n${tfFiles}"
+
+          def firstFile = tfFiles.split("\n")[0]
           def tfDir = firstFile.substring(0, firstFile.lastIndexOf("\\"))
 
-          echo "Terraform directory detected: ${tfDir}"
+          echo "📁 Terraform directory: ${tfDir}"
           env.TF_DIR = tfDir
         }
       }
@@ -57,64 +53,24 @@ pipeline {
       }
     }
 
-    stage('Plan (Dry Run)') {
-      when {
-        expression { params.DRY_RUN == true }
-      }
+    stage('Terraform Plan') {
       steps {
-        script {
-          def targets = []
-
-          if (params.CREATE_EC2_INSTANCE) targets.add('-target=module.ec2_instance')
-          if (params.CREATE_ELASTIC_IP) targets.add('-target=module.elastic_ip')
-          if (params.CREATE_EBS_VOLUME) targets.add('-target=module.ebs_volume')
-          if (params.CREATE_SNAPSHOT) targets.add('-target=module.snapshot')
-
-          def targetArgs = targets.join(' ')
-
-          bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan ${targetArgs}"
-        }
+        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan"
       }
     }
 
-    stage('Apply') {
-      when {
-        expression { params.DRY_RUN == false }
-      }
+    stage('Terraform Apply') {
       steps {
-        script {
-          def targets = []
-
-          if (params.CREATE_EC2_INSTANCE) targets.add('-target=module.ec2_instance')
-          if (params.CREATE_ELASTIC_IP) targets.add('-target=module.elastic_ip')
-          if (params.CREATE_EBS_VOLUME) targets.add('-target=module.ebs_volume')
-          if (params.CREATE_SNAPSHOT) targets.add('-target=module.snapshot')
-
-          def targetArgs = targets.join(' ')
-
-          bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" apply -auto-approve ${targetArgs}"
-        }
+        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" apply -auto-approve"
       }
     }
 
-    stage('Destroy') {
+    stage('Terraform Destroy (Optional)') {
+      when {
+        expression { false } // keep disabled
+      }
       steps {
-        script {
-          def targets = []
-
-          if (params.CREATE_EC2_INSTANCE) targets.add('-target=module.ec2_instance')
-          if (params.CREATE_ELASTIC_IP) targets.add('-target=module.elastic_ip')
-          if (params.CREATE_EBS_VOLUME) targets.add('-target=module.ebs_volume')
-          if (params.CREATE_SNAPSHOT) targets.add('-target=module.snapshot')
-
-          def targetArgs = targets.join(' ')
-
-          if (params.DRY_RUN) {
-            bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan -destroy ${targetArgs}"
-          } else {
-            bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" destroy -auto-approve ${targetArgs}"
-          }
-        }
+        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" destroy -auto-approve"
       }
     }
   }
