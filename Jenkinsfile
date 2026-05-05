@@ -1,8 +1,19 @@
 pipeline {
   agent any
 
+  parameters {
+    booleanParam(name: 'DRY_RUN', defaultValue: true, description: 'If true, only simulate. If false, cleanup runs.')
+
+    booleanParam(name: 'CREATE_EC2_INSTANCE', defaultValue: true)
+    booleanParam(name: 'CREATE_ELASTIC_IP', defaultValue: false)
+    booleanParam(name: 'CREATE_EBS_VOLUME', defaultValue: false)
+    booleanParam(name: 'CREATE_SNAPSHOT', defaultValue: false)
+  }
+
   environment {
-    TF = "${WORKSPACE}\\terraform.exe"
+    SONAR_PROJECT_KEY = "terraform-project"
+    SONAR_HOST_URL = "http://localhost:9000"   // change if needed
+    // SONAR_TOKEN should be stored in Jenkins credentials
   }
 
   stages {
@@ -14,64 +25,61 @@ pipeline {
       }
     }
 
-    stage('Verify Repo Content') {
+    stage('SonarQube Analysis') {
       steps {
-        script {
-          echo "Listing workspace files..."
-          bat 'dir'
-          bat 'dir /s'
-
-          def tfFiles = bat(script: 'dir /s /b *.tf', returnStdout: true).trim()
-
-          if (!tfFiles) {
-            error "❌ No .tf files found. Repo checkout is wrong OR files not in repo root."
-          }
-
-          echo "✅ Terraform files found:\n${tfFiles}"
-
-          def firstFile = tfFiles.split("\n")[0]
-          def tfDir = firstFile.substring(0, firstFile.lastIndexOf("\\"))
-
-          echo "📁 Terraform directory: ${tfDir}"
-          env.TF_DIR = tfDir
+        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+          bat """
+          sonar-scanner ^
+            -Dsonar.projectKey=%SONAR_PROJECT_KEY% ^
+            -Dsonar.host.url=%SONAR_HOST_URL% ^
+            -Dsonar.login=%SONAR_TOKEN% ^
+            -Dsonar.sources=.
+          """
         }
       }
     }
 
-    stage('Setup Terraform') {
+    stage('Show Sonar Report') {
       steps {
-        powershell '''
-          Invoke-WebRequest -Uri https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_windows_amd64.zip -OutFile terraform.zip
-          Expand-Archive -Path terraform.zip -DestinationPath . -Force
-        '''
+        echo "Open Sonar Dashboard: ${env.SONAR_HOST_URL}/dashboard?id=${env.SONAR_PROJECT_KEY}"
       }
     }
 
-    stage('Terraform Init') {
-      steps {
-        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" init"
-      }
-    }
-
-    stage('Terraform Plan') {
-      steps {
-        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan"
-      }
-    }
-
-    stage('Terraform Apply') {
-      steps {
-        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" apply -auto-approve"
-      }
-    }
-
-    stage('Terraform Destroy (Optional)') {
+    stage('Cleanup Resources (Python)') {
       when {
-        expression { false } // keep disabled
+        expression { params.DRY_RUN == false }
       }
       steps {
-        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" destroy -auto-approve"
+        script {
+
+          def resources = []
+
+          if (params.CREATE_EC2_INSTANCE) resources.add("ec2")
+          if (params.CREATE_ELASTIC_IP) resources.add("eip")
+          if (params.CREATE_EBS_VOLUME) resources.add("ebs")
+          if (params.CREATE_SNAPSHOT) resources.add("snapshot")
+
+          if (resources.isEmpty()) {
+            error "No resources selected for cleanup"
+          }
+
+          def resourceArgs = resources.join(" ")
+
+          echo "Deleting resources: ${resourceArgs}"
+
+          bat "python cleanup.py ${resourceArgs}"
+        }
       }
     }
+
+    stage('Dry Run Info') {
+      when {
+        expression { params.DRY_RUN == true }
+      }
+      steps {
+        echo "DRY RUN ENABLED — No resources will be deleted"
+      }
+    }
+
   }
 }
