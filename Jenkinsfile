@@ -27,14 +27,23 @@ pipeline {
       }
     }
 
+    stage('Setup Terraform Tool') {
+      steps {
+        script {
+          env.TERRAFORM_CMD = isUnix() ? "${tool 'terraform'}/terraform" : "${tool 'terraform'}\\terraform.exe"
+          echo "Using Terraform from: ${env.TERRAFORM_CMD}"
+        }
+      }
+    }
+
     stage('Terraform Init') {
       steps {
         dir(env.TF_DIR) {
           script {
             if (isUnix()) {
-              sh 'terraform init -input=false'
+              sh "\"${env.TERRAFORM_CMD}\" init -input=false"
             } else {
-              bat 'terraform init -input=false'
+              bat "\"${env.TERRAFORM_CMD}\" init -input=false"
             }
           }
         }
@@ -91,7 +100,7 @@ pipeline {
 
           dir(env.TF_DIR) {
             def targetArgs = targets.join(' ')
-            def cmd = isUnix() ? "terraform apply -auto-approve ${targetArgs}" : "terraform apply -auto-approve ${targetArgs}"
+            def cmd = isUnix() ? "\"${env.TERRAFORM_CMD}\" apply -auto-approve ${targetArgs}" : "\"${env.TERRAFORM_CMD}\" apply -auto-approve ${targetArgs}"
             echo "Applying selected resources: ${targetArgs}"
             if (isUnix()) {
               sh cmd
@@ -121,7 +130,7 @@ pipeline {
 
           dir(env.TF_DIR) {
             def targetArgs = targets.join(' ')
-            def cmd = isUnix() ? "terraform plan ${targetArgs}" : "terraform plan ${targetArgs}"
+            def cmd = isUnix() ? "\"${env.TERRAFORM_CMD}\" plan ${targetArgs}" : "\"${env.TERRAFORM_CMD}\" plan ${targetArgs}"
             echo "Planning selected resource creation: ${targetArgs}"
             if (isUnix()) {
               sh cmd
@@ -148,7 +157,7 @@ pipeline {
 
           dir(env.TF_DIR) {
             def targetArgs = targets.join(' ')
-            def cmd = params.DRY_RUN == 'true' ? "terraform plan -destroy ${targetArgs}" : "terraform destroy -auto-approve ${targetArgs}"
+            def cmd = params.DRY_RUN == 'true' ? "\"${env.TERRAFORM_CMD}\" plan -destroy ${targetArgs}" : "\"${env.TERRAFORM_CMD}\" destroy -auto-approve ${targetArgs}"
             echo "Executing resource deletion stage with dry-run=${params.DRY_RUN}: ${targetArgs}"
             if (isUnix()) {
               sh cmd
