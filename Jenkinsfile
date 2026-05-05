@@ -102,7 +102,7 @@ pipeline {
             error 'No resources selected for creation. Please enable at least one checkbox.'
           }
 
-          dir('terraform-project') {
+          dir("${env.WORKSPACE}\\terraform-project") {
             def targetArgs = targets.join(' ')
             def tf = "${env.WORKSPACE}\\terraform.exe"
             def cmd = "\"${tf}\" apply -auto-approve ${targetArgs}"
@@ -133,7 +133,7 @@ pipeline {
             error 'No resources selected for dry-run creation. Please enable at least one checkbox.'
           }
 
-          dir(env.TF_DIR) {
+          dir("${env.WORKSPACE}\\terraform-project") {
             def targetArgs = targets.join(' ')
             def tf = "${env.WORKSPACE}\\terraform.exe"
             def cmd = "\"${tf}\" plan ${targetArgs}"
@@ -161,7 +161,7 @@ pipeline {
             error 'No resources selected for deletion. Please enable at least one checkbox.'
           }
 
-          dir(env.TF_DIR) {
+          dir("${env.WORKSPACE}\\terraform-project") {
             def targetArgs = targets.join(' ')
             def tf = "${env.WORKSPACE}\\terraform.exe"
             def cmd = params.DRY_RUN == 'true' ? "\"${tf}\" plan -destroy ${targetArgs}" : "\"${tf}\" destroy -auto-approve ${targetArgs}"
