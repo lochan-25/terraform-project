@@ -3,7 +3,6 @@ pipeline {
 
   environment {
     TF = "${WORKSPACE}\\terraform.exe"
-    TF_DIR = "terraform-project/terraform"
   }
 
   parameters {
@@ -23,6 +22,26 @@ pipeline {
       }
     }
 
+    stage('Find Terraform Directory') {
+      steps {
+        script {
+          // Find directory containing .tf files
+          def output = bat(script: 'dir /s /b *.tf', returnStdout: true).trim()
+
+          if (!output) {
+            error "No .tf files found in workspace"
+          }
+
+          // Extract directory path from first match
+          def firstFile = output.split("\n")[0]
+          def tfDir = firstFile.substring(0, firstFile.lastIndexOf("\\"))
+
+          echo "Terraform directory detected: ${tfDir}"
+          env.TF_DIR = tfDir
+        }
+      }
+    }
+
     stage('Setup Terraform') {
       steps {
         powershell '''
@@ -34,7 +53,7 @@ pipeline {
 
     stage('Terraform Init') {
       steps {
-        bat "\"${env.TF}\" -chdir=${env.TF_DIR} init"
+        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" init"
       }
     }
 
@@ -53,7 +72,7 @@ pipeline {
 
           def targetArgs = targets.join(' ')
 
-          bat "\"${env.TF}\" -chdir=${env.TF_DIR} plan ${targetArgs}"
+          bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan ${targetArgs}"
         }
       }
     }
@@ -73,7 +92,7 @@ pipeline {
 
           def targetArgs = targets.join(' ')
 
-          bat "\"${env.TF}\" -chdir=${env.TF_DIR} apply -auto-approve ${targetArgs}"
+          bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" apply -auto-approve ${targetArgs}"
         }
       }
     }
@@ -91,13 +110,12 @@ pipeline {
           def targetArgs = targets.join(' ')
 
           if (params.DRY_RUN) {
-            bat "\"${env.TF}\" -chdir=${env.TF_DIR} plan -destroy ${targetArgs}"
+            bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan -destroy ${targetArgs}"
           } else {
-            bat "\"${env.TF}\" -chdir=${env.TF_DIR} destroy -auto-approve ${targetArgs}"
+            bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" destroy -auto-approve ${targetArgs}"
           }
         }
       }
     }
-
   }
 }
