@@ -67,11 +67,21 @@ pipeline {
 
     stage('Setup Trivy') {
         steps {
-            powershell '''
-                Invoke-WebRequest -Uri https://github.com/aquasecurity/trivy/releases/latest/download/trivy_windows_amd64.zip -OutFile trivy.zip
-                Expand-Archive -Path trivy.zip -DestinationPath . -Force
-                Get-ChildItem -Recurse -Filter trivy.exe | Select-Object -First 1 | Move-Item -Destination trivy.exe -Force
-            '''
+            script {
+                if (isUnix()) {
+                    sh '''
+                        curl -L -o trivy.tar.gz https://github.com/aquasecurity/trivy/releases/latest/download/trivy_Linux-64bit.tar.gz
+                        tar -xzf trivy.tar.gz
+                        mv trivy /usr/local/bin/trivy
+                    '''
+                } else {
+                    bat '''
+                        curl -L -o trivy.zip https://github.com/aquasecurity/trivy/releases/latest/download/trivy_windows_amd64.zip
+                        tar -xf trivy.zip
+                        for /r %%i in (trivy.exe) do copy "%%i" trivy.exe
+                    '''
+                }
+            }
         }
     }
 
