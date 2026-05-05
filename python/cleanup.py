@@ -1,81 +1,103 @@
 import boto3
+import sys
 
-def get_ec2_instances(ec2):
-    return ec2.describe_instances()['Reservations']
+ec2 = boto3.client('ec2')
+s3 = boto3.client('s3')
 
-def get_ebs_volumes(ec2):
-    return ec2.describe_volumes()['Volumes']
 
-def get_elastic_ips(ec2):
-    return ec2.describe_addresses()['Addresses']
+def delete_ec2(dry_run=False):
+    print("Fetching EC2 instances...")
+    instances = ec2.describe_instances()
 
-def get_snapshots(ec2):
-    return ec2.describe_snapshots(OwnerIds=['self'])['Snapshots']
+    instance_ids = []
+    for reservation in instances['Reservations']:
+        for instance in reservation['Instances']:
+            instance_ids.append(instance['InstanceId'])
 
-def has_tag(tags, key, value):
-    return any(tag.get('Key') == key and tag.get('Value') == value for tag in tags or [])
+    if not instance_ids:
+        print("No EC2 instances found.")
+        return
 
-def cleanup_tagged_ec2_instances(ec2, instances, tag_key, tag_value, dry_run=False):
-    matching = [inst for reservation in instances for inst in reservation['Instances'] if has_tag(inst.get('Tags'), tag_key, tag_value)]
+    print(f"Instances found: {instance_ids}")
 
-    for instance in matching:
-        print(f"Terminating EC2 Instance ID: {instance['InstanceId']} (state={instance['State']['Name']})")
-        if not dry_run:
-            ec2.terminate_instances(InstanceIds=[instance['InstanceId']])
-            print(f"Terminated EC2 Instance ID: {instance['InstanceId']}")
+    if dry_run:
+        print("Dry run enabled. Skipping EC2 deletion.")
+    else:
+        print("Deleting EC2 instances...")
+        ec2.terminate_instances(InstanceIds=instance_ids)
 
-def cleanup_tagged_ebs_volumes(ec2, volumes, tag_key, tag_value, dry_run=False):
-    matching = [vol for vol in volumes if has_tag(vol.get('Tags'), tag_key, tag_value)]
 
-    for volume in matching:
-        if volume.get('Attachments'):
-            print(f"Skipping attached EBS Volume ID: {volume['VolumeId']}")
+def delete_ebs(dry_run=False):
+    print("Fetching EBS volumes...")
+    volumes = ec2.describe_volumes()
+
+    volume_ids = [v['VolumeId'] for v in volumes['Volumes']]
+
+    if not volume_ids:
+        print("No EBS volumes found.")
+        return
+
+    print(f"Volumes found: {volume_ids}")
+
+    if dry_run:
+        print("Dry run enabled. Skipping EBS deletion.")
+    else:
+        for vol in volume_ids:
+            print(f"Deleting volume: {vol}")
+            try:
+                ec2.delete_volume(VolumeId=vol)
+            except Exception as e:
+                print(f"Error deleting {vol}: {e}")
+
+
+def delete_s3(dry_run=False):
+    print("Fetching S3 buckets...")
+    buckets = s3.list_buckets()
+
+    for bucket in buckets['Buckets']:
+        name = bucket['Name']
+        print(f"Bucket found: {name}")
+
+        if dry_run:
+            print(f"Dry run: skipping bucket {name}")
             continue
 
-        print(f"Deleting EBS Volume ID: {volume['VolumeId']}")
-        if not dry_run:
-            ec2.delete_volume(VolumeId=volume['VolumeId'])
-            print(f"Deleted EBS Volume ID: {volume['VolumeId']}")
+        print(f"Deleting bucket: {name}")
 
-def cleanup_tagged_elastic_ips(ec2, elastic_ips, tag_key, tag_value, dry_run=False):
-    for ip in elastic_ips:
-        if has_tag(ip.get('Tags'), tag_key, tag_value):
-            allocation_id = ip['AllocationId']
-            if ip.get('InstanceId') and ip.get('AssociationId'):
-                print(f"Disassociating Elastic IP: {allocation_id} from instance {ip['InstanceId']}")
-                if not dry_run:
-                    ec2.disassociate_address(AssociationId=ip['AssociationId'])
-            print(f"Releasing Elastic IP Allocation ID: {allocation_id}")
-            if not dry_run:
-                ec2.release_address(AllocationId=allocation_id)
-                print(f"Released Elastic IP Allocation ID: {allocation_id}")
+        # delete all objects
+        objects = s3.list_objects_v2(Bucket=name)
+        if 'Contents' in objects:
+            for obj in objects['Contents']:
+                s3.delete_object(Bucket=name, Key=obj['Key'])
 
-def cleanup_tagged_snapshots(ec2, snapshots, tag_key, tag_value, dry_run=False):
-    matching = [snap for snap in snapshots if has_tag(snap.get('Tags'), tag_key, tag_value)]
+        try:
+            s3.delete_bucket(Bucket=name)
+        except Exception as e:
+            print(f"Error deleting bucket {name}: {e}")
 
-    for snapshot in matching:
-        print(f"Deleting Snapshot ID: {snapshot['SnapshotId']}")
-        if not dry_run:
-            ec2.delete_snapshot(SnapshotId=snapshot['SnapshotId'])
-            print(f"Deleted Snapshot ID: {snapshot['SnapshotId']}")
 
 def main():
-    session = boto3.Session()
-    ec2 = session.client('ec2')
+    if len(sys.argv) < 2:
+        print("Usage: python cleanup.py <ec2|ebs|s3> [dryrun]")
+        sys.exit(1)
 
-    instances = get_ec2_instances(ec2)
-    volumes = get_ebs_volumes(ec2)
-    elastic_ips = get_elastic_ips(ec2)
-    snapshots = get_snapshots(ec2)
+    resource = sys.argv[1].lower()
+    dry_run = False
 
-    dry_run = input("Perform dry run? (yes/no): ").strip().lower() == 'yes'
-    tag_key = 'Name'
-    tag_value = 'terraform-example'
+    if len(sys.argv) > 2:
+        dry_run = sys.argv[2].lower() == "true"
 
-    cleanup_tagged_ec2_instances(ec2, instances, tag_key, tag_value, dry_run=dry_run)
-    cleanup_tagged_ebs_volumes(ec2, volumes, tag_key, tag_value, dry_run=dry_run)
-    cleanup_tagged_elastic_ips(ec2, elastic_ips, tag_key, tag_value, dry_run=dry_run)
-    cleanup_tagged_snapshots(ec2, snapshots, tag_key, tag_value, dry_run=dry_run)
+    print(f"Running cleanup for: {resource}, dry_run={dry_run}")
+
+    if resource == "ec2":
+        delete_ec2(dry_run)
+    elif resource == "ebs":
+        delete_ebs(dry_run)
+    elif resource == "s3":
+        delete_s3(dry_run)
+    else:
+        print("Invalid resource type. Use ec2 | ebs | s3")
+
 
 if __name__ == "__main__":
     main()
