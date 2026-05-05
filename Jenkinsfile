@@ -70,26 +70,7 @@ pipeline {
             dir(env.TF_DIR) {
                 script {
 
-                    echo 'Running Trivy IaC and filesystem scans...'
-
-                    def trivyConfig = isUnix() ?
-                        'docker run --rm -v $(pwd):/workspace aquasec/trivy:latest config --format json --output /workspace/trivy-iac-report.json /workspace' :
-                        'docker run --rm -v %cd%:/workspace aquasec/trivy:latest config --format json --output /workspace/trivy-iac-report.json /workspace'
-
-                    def trivyFs = isUnix() ?
-                        'docker run --rm -v $(pwd)/..:/workspace aquasec/trivy:latest fs --format json --output /workspace/trivy-fs-report.json /workspace' :
-                        'docker run --rm -v %cd%\\..:/workspace aquasec/trivy:latest fs --format json --output /workspace/trivy-fs-report.json /workspace'
-
-                    if (isUnix()) {
-                        sh trivyConfig
-                        sh trivyFs
-                    } else {
-                        bat trivyConfig
-                        bat trivyFs
-                    }
-
-                    echo 'Optional Sonar scan: ensure sonar-scanner is installed and SONAR_TOKEN is configured.'
-
+                    echo 'Skipping Trivy scan (tool not available in Jenkins environment)'
                     if (env.SONAR_TOKEN) {
                         def sonarCmd = "sonar-scanner -Dsonar.projectKey=${env.SONAR_PROJECT_KEY} -Dsonar.host.url=${env.SONAR_HOST_URL} -Dsonar.login=${env.SONAR_TOKEN} -Dsonar.sources=."
 
