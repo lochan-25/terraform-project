@@ -68,7 +68,7 @@ pipeline {
     stage('Setup Trivy') {
         steps {
             powershell '''
-                Invoke-WebRequest -Uri https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.1_windows-64bit.zip -OutFile trivy.zip
+                Invoke-WebRequest -Uri https://github.com/aquasecurity/trivy/releases/download/v0.50.1/trivy_0.50.1_windows-64bit.zip -OutFile trivy.zip
                 Expand-Archive -Path trivy.zip -DestinationPath . -Force
                 Get-ChildItem -Recurse -Filter trivy.exe | Select-Object -First 1 | Move-Item -Destination trivy.exe -Force
             '''
