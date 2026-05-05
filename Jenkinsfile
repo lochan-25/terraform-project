@@ -3,7 +3,7 @@ pipeline {
 
   environment {
     TF = "${WORKSPACE}\\terraform.exe"
-    TF_DIR = "${WORKSPACE}\\infra"
+    TF_DIR = "${WORKSPACE}\\terraform_updated"
     AWS_DEFAULT_REGION = "us-east-1"
   }
 
@@ -13,35 +13,6 @@ pipeline {
       steps {
         deleteDir()
         git branch: 'main', url: 'https://github.com/lochan-25/terraform-project.git'
-      }
-    }
-
-    stage('Create Terraform Files') {
-      steps {
-        script {
-          bat 'mkdir infra'
-
-          writeFile file: 'infra/main.tf', text: '''
-provider "aws" {
-  region = "us-east-1"
-}
-
-data "aws_ami" "amazon_linux" {
-  most_recent = true
-  owners      = ["amazon"]
-
-  filter {
-    name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
-  }
-}
-
-resource "aws_instance" "example" {
-  ami           = data.aws_ami.amazon_linux.id
-  instance_type = "t2.micro"
-}
-'''
-        }
       }
     }
 
@@ -71,6 +42,12 @@ resource "aws_instance" "example" {
     stage('Terraform Init') {
       steps {
         bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" init"
+      }
+    }
+
+    stage('Terraform Plan') {
+      steps {
+        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan"
       }
     }
 
