@@ -3,7 +3,6 @@ pipeline {
 
   parameters {
     booleanParam(name: 'DRY_RUN', defaultValue: true)
-    booleanParam(name: 'CREATE_EC2_INSTANCE', defaultValue: true)
   }
 
   environment {
@@ -21,7 +20,6 @@ pipeline {
       }
     }
 
-    // 🔥 FIX: create Terraform config if missing
     stage('Create Terraform Files') {
       steps {
         script {
@@ -50,17 +48,18 @@ resource "aws_instance" "example" {
       }
     }
 
+    // ✅ CRITICAL FIX: Proper AWS ENV injection
     stage('Configure AWS') {
       steps {
         withCredentials([
           string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
           string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
         ]) {
-          bat '''
-          set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
-          set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
-          set AWS_DEFAULT_REGION=us-east-1
-          '''
+          script {
+            env.AWS_ACCESS_KEY_ID = AWS_ACCESS_KEY_ID
+            env.AWS_SECRET_ACCESS_KEY = AWS_SECRET_ACCESS_KEY
+            env.AWS_DEFAULT_REGION = "us-east-1"
+          }
         }
       }
     }
@@ -86,13 +85,11 @@ resource "aws_instance" "example" {
       }
     }
 
-    // 🔥 FIX: create cleanup script
     stage('Create cleanup.py') {
       steps {
         writeFile file: 'cleanup.py', text: '''
 import sys
-print("Cleanup running")
-print("Resources:", sys.argv[1:])
+print("Cleanup running:", sys.argv[1:])
 '''
       }
     }
@@ -111,8 +108,9 @@ print("Resources:", sys.argv[1:])
         expression { params.DRY_RUN == true }
       }
       steps {
-        echo "DRY RUN — nothing applied"
+        echo "DRY RUN — no infra created"
       }
     }
+
   }
 }
