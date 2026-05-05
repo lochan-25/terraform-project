@@ -51,17 +51,18 @@ pipeline {
     }
 
     stage('Terraform Init') {
-      steps {
-        dir(env.TF_DIR) {
-          script {
-            if (isUnix()) {
-              sh "\"${env.TERRAFORM_CMD}\" init -input=false"
-            } else {
-              bat "\"${env.TERRAFORM_CMD}\" init -input=false"
+        steps {
+            dir(env.TF_DIR) {
+                script {
+                    def tf = "${env.WORKSPACE}\\terraform.exe"
+                    if (isUnix()) {
+                        sh "${tf} init -input=false"
+                    } else {
+                        bat "\"${tf}\" init -input=false"
+                    }
+                }
             }
-          }
         }
-      }
     }
 
     stage('Scans') {
