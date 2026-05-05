@@ -104,7 +104,8 @@ pipeline {
 
           dir(env.TF_DIR) {
             def targetArgs = targets.join(' ')
-            def cmd = isUnix() ? "\"${env.TERRAFORM_CMD}\" apply -auto-approve ${targetArgs}" : "\"${env.TERRAFORM_CMD}\" apply -auto-approve ${targetArgs}"
+            def tf = "${env.WORKSPACE}\\terraform.exe"
+            def cmd = "\"${tf}\" apply -auto-approve ${targetArgs}"
             echo "Applying selected resources: ${targetArgs}"
             if (isUnix()) {
               sh cmd
@@ -134,7 +135,8 @@ pipeline {
 
           dir(env.TF_DIR) {
             def targetArgs = targets.join(' ')
-            def cmd = isUnix() ? "\"${env.TERRAFORM_CMD}\" plan ${targetArgs}" : "\"${env.TERRAFORM_CMD}\" plan ${targetArgs}"
+            def tf = "${env.WORKSPACE}\\terraform.exe"
+            def cmd = "\"${tf}\" plan ${targetArgs}"
             echo "Planning selected resource creation: ${targetArgs}"
             if (isUnix()) {
               sh cmd
@@ -161,7 +163,8 @@ pipeline {
 
           dir(env.TF_DIR) {
             def targetArgs = targets.join(' ')
-            def cmd = params.DRY_RUN == 'true' ? "\"${env.TERRAFORM_CMD}\" plan -destroy ${targetArgs}" : "\"${env.TERRAFORM_CMD}\" destroy -auto-approve ${targetArgs}"
+            def tf = "${env.WORKSPACE}\\terraform.exe"
+            def cmd = params.DRY_RUN == 'true' ? "\"${tf}\" plan -destroy ${targetArgs}" : "\"${tf}\" destroy -auto-approve ${targetArgs}"
             echo "Executing resource deletion stage with dry-run=${params.DRY_RUN}: ${targetArgs}"
             if (isUnix()) {
               sh cmd
