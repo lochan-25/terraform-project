@@ -67,21 +67,19 @@ pipeline {
 
     stage('Setup Trivy') {
         steps {
-            script {
-                if (isUnix()) {
-                    sh '''
-                        curl -L -o trivy.tar.gz https://github.com/aquasecurity/trivy/releases/latest/download/trivy_Linux-64bit.tar.gz
-                        tar -xzf trivy.tar.gz
-                        mv trivy /usr/local/bin/trivy
-                    '''
-                } else {
-                    bat '''
-                        curl -L -o trivy.zip https://github.com/aquasecurity/trivy/releases/latest/download/trivy_windows_amd64.zip
-                        tar -xf trivy.zip
-                        for /r %%i in (trivy.exe) do copy "%%i" trivy.exe
-                    '''
-                }
-            }
+            powershell '''
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+                $url = "https://github.com/aquasecurity/trivy/releases/download/v0.50.1/trivy_0.50.1_windows-64bit.zip"
+                $output = "trivy.zip"
+
+                Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
+
+                Expand-Archive -Path $output -DestinationPath . -Force
+
+                $trivyPath = Get-ChildItem -Recurse -Filter trivy.exe | Select-Object -First 1
+                Move-Item $trivyPath.FullName -Destination "trivy.exe" -Force
+            '''
         }
     }
 
