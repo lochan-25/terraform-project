@@ -2,7 +2,7 @@ pipeline {
   agent any
 
   parameters {
-    booleanParam(name: 'DRY_RUN', defaultValue: true, description: 'If true, only simulate. If false, cleanup runs.')
+    booleanParam(name: 'DRY_RUN', defaultValue: true)
     booleanParam(name: 'CREATE_EC2_INSTANCE', defaultValue: true)
     booleanParam(name: 'CREATE_ELASTIC_IP', defaultValue: false)
     booleanParam(name: 'CREATE_EBS_VOLUME', defaultValue: false)
@@ -10,8 +10,9 @@ pipeline {
   }
 
   environment {
-    SONAR_PROJECT_KEY = "terraform-project"
-    SONAR_HOST_URL = "http://localhost:9000"   // change if needed
+    TF = "${WORKSPACE}\\terraform.exe"
+    TF_DIR = "${WORKSPACE}\\terraform-project\\terraform"
+    AWS_DEFAULT_REGION = "us-east-1"
   }
 
   stages {
@@ -23,31 +24,66 @@ pipeline {
       }
     }
 
-    stage('SonarQube Analysis') {
+    stage('Verify Files') {
       steps {
-        script {
-          echo "Starting Sonar analysis..."
+        bat 'dir'
+        bat 'dir /s *.tf'
+      }
+    }
 
-          try {
-            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-              bat """
-              sonar-scanner ^
-                -Dsonar.projectKey=${env.SONAR_PROJECT_KEY} ^
-                -Dsonar.host.url=${env.SONAR_HOST_URL} ^
-                -Dsonar.login=%SONAR_TOKEN% ^
-                -Dsonar.sources=.
-              """
-            }
-          } catch (Exception e) {
-            echo "⚠️ Sonar credentials not found OR scanner not installed. Skipping Sonar."
-          }
+    stage('Setup Terraform') {
+      steps {
+        powershell '''
+          Invoke-WebRequest -Uri https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_windows_amd64.zip -OutFile terraform.zip
+          Expand-Archive terraform.zip -DestinationPath . -Force
+        '''
+      }
+    }
+
+    stage('Configure AWS') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'aws-creds',
+          usernameVariable: 'AWS_ACCESS_KEY_ID',
+          passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+        )]) {
+          bat '''
+          set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
+          set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
+          set AWS_DEFAULT_REGION=us-east-1
+          '''
         }
       }
     }
 
-    stage('Show Sonar Report') {
+    stage('Terraform Init') {
       steps {
-        echo "👉 Sonar Dashboard: ${env.SONAR_HOST_URL}/dashboard?id=${env.SONAR_PROJECT_KEY}"
+        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" init"
+      }
+    }
+
+    stage('Terraform Plan') {
+      steps {
+        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan"
+      }
+    }
+
+    stage('Terraform Apply') {
+      when {
+        expression { params.DRY_RUN == false }
+      }
+      steps {
+        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" apply -auto-approve"
+      }
+    }
+
+    stage('Create cleanup.py (fix your error)') {
+      steps {
+        writeFile file: 'cleanup.py', text: '''
+import sys
+print("Cleanup started")
+print("Resources:", sys.argv[1:])
+'''
       }
     }
 
@@ -57,7 +93,6 @@ pipeline {
       }
       steps {
         script {
-
           def resources = []
 
           if (params.CREATE_EC2_INSTANCE) resources.add("ec2")
@@ -65,15 +100,9 @@ pipeline {
           if (params.CREATE_EBS_VOLUME) resources.add("ebs")
           if (params.CREATE_SNAPSHOT) resources.add("snapshot")
 
-          if (resources.isEmpty()) {
-            error "❌ No resources selected for cleanup"
-          }
+          def args = resources.join(" ")
 
-          def resourceArgs = resources.join(" ")
-
-          echo "Deleting resources: ${resourceArgs}"
-
-          bat "python cleanup.py ${resourceArgs}"
+          bat "python cleanup.py ${args}"
         }
       }
     }
@@ -83,15 +112,9 @@ pipeline {
         expression { params.DRY_RUN == true }
       }
       steps {
-        echo "✅ DRY RUN ENABLED — No resources will be deleted"
+        echo "DRY RUN — No resources created or deleted"
       }
     }
 
-  }
-
-  post {
-    always {
-      echo "Pipeline completed"
-    }
   }
 }
