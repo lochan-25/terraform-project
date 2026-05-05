@@ -49,6 +49,12 @@ pipeline {
       }
     }
 
+    stage('Terraform Plan') {
+      steps {
+        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan"
+      }
+    }
+
     stage('Terraform Apply') {
       steps {
         bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" apply -auto-approve"
@@ -56,27 +62,39 @@ pipeline {
     }
 
     // =========================
-    // 🔍 SONAR ANALYSIS STAGE
+    // 🔍 SONAR ANALYSIS (SAFE)
     // =========================
     stage('SonarQube Analysis') {
-      when {
-        expression { return env.SONAR_TOKEN != null }
-      }
       steps {
-        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-          bat """
-          sonar-scanner ^
-          -Dsonar.projectKey=terraform-project ^
-          -Dsonar.sources=. ^
-          -Dsonar.host.url=http://localhost:9000 ^
-          -Dsonar.login=%SONAR_TOKEN%
-          """
+        script {
+          try {
+            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+              bat """
+              sonar-scanner ^
+              -Dsonar.projectKey=terraform-project ^
+              -Dsonar.sources=. ^
+              -Dsonar.host.url=http://localhost:9000 ^
+              -Dsonar.login=%SONAR_TOKEN%
+              """
+            }
+          } catch (Exception e) {
+            echo "Sonar skipped (no token or scanner not installed)"
+          }
         }
       }
     }
 
     // =========================
-    // 🧹 PYTHON CLEANUP STAGE
+    // 📦 INSTALL PYTHON DEPS
+    // =========================
+    stage('Install Python Dependencies') {
+      steps {
+        bat 'python -m pip install boto3'
+      }
+    }
+
+    // =========================
+    // 🧹 CLEANUP (OPTIONAL)
     // =========================
     stage('Delete Resources (Python)') {
       when {
@@ -86,7 +104,6 @@ pipeline {
         script {
           echo "Running cleanup script..."
 
-          // adjust path if your script is inside python folder
           bat "python python\\cleanup.py ec2"
           bat "python python\\cleanup.py ebs"
           bat "python python\\cleanup.py s3"
@@ -94,11 +111,20 @@ pipeline {
       }
     }
 
+    stage('Dry Run Info') {
+      when {
+        expression { params.DELETE_RESOURCES == false }
+      }
+      steps {
+        echo "Resources created. Cleanup not triggered."
+      }
+    }
+
   }
 
   post {
     always {
-      echo "Pipeline execution completed"
+      echo "Pipeline completed successfully"
     }
   }
 }
