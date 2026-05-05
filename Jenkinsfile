@@ -1,10 +1,6 @@
 pipeline {
   agent any
 
-  parameters {
-    booleanParam(name: 'DRY_RUN', defaultValue: true)
-  }
-
   environment {
     TF = "${WORKSPACE}\\terraform.exe"
     TF_DIR = "${WORKSPACE}\\infra"
@@ -30,8 +26,18 @@ provider "aws" {
   region = "us-east-1"
 }
 
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+}
+
 resource "aws_instance" "example" {
-  ami           = "ami-0c55b159cbfafe1f0"
+  ami           = data.aws_ami.amazon_linux.id
   instance_type = "t2.micro"
 }
 '''
@@ -48,7 +54,6 @@ resource "aws_instance" "example" {
       }
     }
 
-    // ✅ CRITICAL FIX: Proper AWS ENV injection
     stage('Configure AWS') {
       steps {
         withCredentials([
@@ -58,7 +63,6 @@ resource "aws_instance" "example" {
           script {
             env.AWS_ACCESS_KEY_ID = AWS_ACCESS_KEY_ID
             env.AWS_SECRET_ACCESS_KEY = AWS_SECRET_ACCESS_KEY
-            env.AWS_DEFAULT_REGION = "us-east-1"
           }
         }
       }
@@ -70,45 +74,9 @@ resource "aws_instance" "example" {
       }
     }
 
-    stage('Terraform Plan') {
-      steps {
-        bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" plan"
-      }
-    }
-
     stage('Terraform Apply') {
-      when {
-        expression { params.DRY_RUN == false }
-      }
       steps {
         bat "\"${env.TF}\" -chdir=\"${env.TF_DIR}\" apply -auto-approve"
-      }
-    }
-
-    stage('Create cleanup.py') {
-      steps {
-        writeFile file: 'cleanup.py', text: '''
-import sys
-print("Cleanup running:", sys.argv[1:])
-'''
-      }
-    }
-
-    stage('Cleanup Resources') {
-      when {
-        expression { params.DRY_RUN == false }
-      }
-      steps {
-        bat "python cleanup.py ec2"
-      }
-    }
-
-    stage('Dry Run Info') {
-      when {
-        expression { params.DRY_RUN == true }
-      }
-      steps {
-        echo "DRY RUN — no infra created"
       }
     }
 
