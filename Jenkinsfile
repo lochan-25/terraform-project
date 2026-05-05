@@ -102,7 +102,7 @@ pipeline {
             error 'No resources selected for creation. Please enable at least one checkbox.'
           }
 
-          dir(env.TF_DIR) {
+          dir('terraform-project') {
             def targetArgs = targets.join(' ')
             def tf = "${env.WORKSPACE}\\terraform.exe"
             def cmd = "\"${tf}\" apply -auto-approve ${targetArgs}"
