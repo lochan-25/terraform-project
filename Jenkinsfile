@@ -69,7 +69,8 @@ pipeline {
       steps {
         dir(env.TF_DIR) {
           script {
-            def trivyConfig = isUnix() ? 'trivy config --format json --output trivy-iac-report.json .' : 'trivy config --format json --output trivy-iac-report.json .'
+            def trivy = "${env.WORKSPACE}\\trivy.exe"
+            def trivyConfig = "\"${trivy}\" config --format json --output trivy-iac-report.json ."
             def trivyFs = isUnix() ? "trivy fs --format json --output ../trivy-fs-report.json .." : "trivy fs --format json --output ..\\trivy-fs-report.json .."
 
             echo 'Running Trivy IaC and filesystem scans...'
