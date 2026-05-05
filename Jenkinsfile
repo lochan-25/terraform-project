@@ -24,7 +24,7 @@ pipeline {
     steps {
         git branch: 'main', url: 'https://github.com/lochan-25/terraform-project.git'
     }
- }
+    }
 
     stage('Setup Terraform Tool') {
       steps {
