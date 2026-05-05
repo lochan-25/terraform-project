@@ -65,6 +65,20 @@ pipeline {
         }
     }
 
+    stage('Setup Trivy') {
+        steps {
+            script {
+                bat '''
+                powershell -Command "
+                Invoke-WebRequest -Uri https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.1_windows-64bit.zip -OutFile trivy.zip;
+                Expand-Archive -Path trivy.zip -DestinationPath . -Force;
+                Get-ChildItem -Recurse -Filter trivy.exe | Select-Object -First 1 | Move-Item -Destination trivy.exe -Force
+                "
+                '''
+            }
+        }
+    }
+
     stage('Scans') {
       steps {
         dir(env.TF_DIR) {
