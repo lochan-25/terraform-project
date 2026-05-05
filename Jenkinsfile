@@ -65,57 +65,46 @@ pipeline {
         }
     }
 
-    stage('Setup Trivy') {
-        steps {
-            powershell '''
-                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-                $url = "https://github.com/aquasecurity/trivy/releases/download/v0.50.1/trivy_0.50.1_windows-64bit.zip"
-                $output = "trivy.zip"
-
-                Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
-
-                Expand-Archive -Path $output -DestinationPath . -Force
-
-                $trivyPath = Get-ChildItem -Recurse -Filter trivy.exe | Select-Object -First 1
-                Move-Item $trivyPath.FullName -Destination "trivy.exe" -Force
-            '''
-        }
-    }
-
     stage('Scans') {
-      steps {
-        dir(env.TF_DIR) {
-          script {
-            def trivy = "${env.WORKSPACE}\\trivy.exe"
-            def trivyConfig = "\"${trivy}\" config --format json --output trivy-iac-report.json ."
-            def trivyFs = isUnix() ? "trivy fs --format json --output ../trivy-fs-report.json .." : "trivy fs --format json --output ..\\trivy-fs-report.json .."
+        steps {
+            dir(env.TF_DIR) {
+                script {
 
-            echo 'Running Trivy IaC and filesystem scans...'
-            if (isUnix()) {
-              sh trivyConfig
-              sh trivyFs
-            } else {
-              bat trivyConfig
-              bat trivyFs
-            }
+                    echo 'Running Trivy IaC and filesystem scans...'
 
-            echo 'Optional Sonar scan: ensure sonar-scanner is installed and SONAR_TOKEN is configured.'
-            if (env.SONAR_TOKEN) {
-              def sonarCmd = isUnix() ? 'sonar-scanner -Dsonar.projectKey=' + env.SONAR_PROJECT_KEY + ' -Dsonar.host.url=' + env.SONAR_HOST_URL + ' -Dsonar.login=' + env.SONAR_TOKEN + ' -Dsonar.sources=.' : 'sonar-scanner -Dsonar.projectKey=' + env.SONAR_PROJECT_KEY + ' -Dsonar.host.url=' + env.SONAR_HOST_URL + ' -Dsonar.login=' + env.SONAR_TOKEN + ' -Dsonar.sources=.'
-              if (isUnix()) {
-                sh sonarCmd
-              } else {
-                bat sonarCmd
-              }
-            } else {
-              echo 'Skipping Sonar scan because SONAR_TOKEN is not defined.'
+                    def trivyConfig = isUnix() ?
+                        'docker run --rm -v $(pwd):/workspace aquasec/trivy:latest config --format json --output /workspace/trivy-iac-report.json /workspace' :
+                        'docker run --rm -v %cd%:/workspace aquasec/trivy:latest config --format json --output /workspace/trivy-iac-report.json /workspace'
+
+                    def trivyFs = isUnix() ?
+                        'docker run --rm -v $(pwd)/..:/workspace aquasec/trivy:latest fs --format json --output /workspace/trivy-fs-report.json /workspace' :
+                        'docker run --rm -v %cd%\\..:/workspace aquasec/trivy:latest fs --format json --output /workspace/trivy-fs-report.json /workspace'
+
+                    if (isUnix()) {
+                        sh trivyConfig
+                        sh trivyFs
+                    } else {
+                        bat trivyConfig
+                        bat trivyFs
+                    }
+
+                    echo 'Optional Sonar scan: ensure sonar-scanner is installed and SONAR_TOKEN is configured.'
+
+                    if (env.SONAR_TOKEN) {
+                        def sonarCmd = "sonar-scanner -Dsonar.projectKey=${env.SONAR_PROJECT_KEY} -Dsonar.host.url=${env.SONAR_HOST_URL} -Dsonar.login=${env.SONAR_TOKEN} -Dsonar.sources=."
+
+                        if (isUnix()) {
+                            sh sonarCmd
+                        } else {
+                            bat sonarCmd
+                        }
+                    } else {
+                        echo 'Skipping Sonar scan because SONAR_TOKEN is not defined.'
+                    }
+                }
             }
-          }
         }
-      }
     }
-
     stage('Create Resources') {
       when {
         expression { params.DRY_RUN == 'false' }
