@@ -3,7 +3,7 @@ pipeline {
 
   environment {
     TF = "${WORKSPACE}\\terraform.exe"
-    TF_DIR = "${WORKSPACE}\\terraform_updated"
+    TF_DIR = "${WORKSPACE}\\python\\terraform_updated"
     AWS_DEFAULT_REGION = "us-east-1"
   }
 
